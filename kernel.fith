@@ -1,0 +1,196 @@
+\ This is a comment
+\ * '(' can start processing words until ')' and assign them per what is on the stack
+\ * a generic 'end' word could be used to close up all blocks
+\ * var for global variable and maybe let for local variables
+\ * investigate the ability to tail recurse in a smart way
+\ * potentially make key work off a queue of stacks as the data structure with the
+\ 	pointers being what is being saved. This would allow delaying the
+\ 	processing as well as jumping to another est to later return
+\ call word
+\ rewrite a terminal in this file in dayForth
+\ This would be an effective bootstrap
+\ finish out the jones forth port
+\ project was shelved for a bit due to not enough motivation
+\ the way key works and interacts is the pivotal part of the system
+\ key needs to check for 'other' tasks to be in a queue. These other tasks would
+\ include pushing something onto the queue or using it as a stack. This duality
+\ and the need to do it live makes me think of a linked list like structure.
+\ This is slower than a static structure, but may not be needed. I do wonder how
+\ to structure the task queue alongside the other parts of key. This problem also opens up more with multuple input and output.
+
+\ add comparision words
+\ add in memmove word
+
+
+\func dayVersion 1 endfunc
+\2 2 + . drop
+\
+\\ LITERAL takes whatever is on the stack and compiles LIT <foo>
+\func LITERAL IMMEDIATE
+\	LIT LIT ,dict	\ compile LIT
+\	,dict endfunc	\ compile the literal itself (from the stack)
+\
+\\ IF is an IMMEDIATE word which compiles 0BRANCH followed by a dummy offset, and places
+\\ the address of the 0BRANCH on the stack.  Later when we see THEN, we pop that address
+\\ off the stack, calculate the offset, and back-fill the offset.
+\func if IMMEDIATE
+\	LIT _BZ ,dict	\ compile 0BRANCH
+\	HERE		\ save location of the offset on the stack
+\	0 ,dict		\ compile a dummy offset
+\endfunc
+\
+\func then IMMEDIATE
+\	dup
+\	HERE swap -	\ calculate the offset from the address saved on the stack
+\	swap !		\ store the offset in the back-filled location
+\endfunc
+\
+\func else IMMEDIATE
+\	LIT BRANCH ,dict	\ definite branch to just over the false-part
+\	HERE			\ save location of the offset on the stack
+\	0 ,dict			\ compile a dummy offset
+\	swap			\ now back-fill the original (IF) offset
+\	dup			\ same as for THEN word above
+\	HERE swap -
+\	swap !
+\endfunc
+\
+\func begin IMMEDIATE
+\	HERE		\ save location on the stack
+\endfunc
+\
+\\ begin condition if loop-part repeat
+\\	-- compiles to: --> condition 0BRANCH OFFSET2 loop-part BRANCH OFFSET
+\\	where OFFSET points back to condition (the beginning) and OFFSET2 points to after the whole piece of code
+\\ So this is like a while (condition) { loop-part } loop in the C language
+\
+\func repeat IMMEDIATE
+\	LIT BRANCH ,dict	\ compile BRANCH
+\	swap			\ get the original offset (from BEGIN)
+\	HERE - ,dict		\ and compile it after BRANCH
+\	dup
+\	HERE swap -		\ calculate the offset2
+\	swap !			\ and back-fill it in the original location
+\endfunc
+\
+\\ begin loop-part again
+\\	-- compiles to: --> loop-part BRANCH OFFSET
+\\	where OFFSET points back to the loop-part
+\\ In other words, an infinite loop which can only be returned from with EXIT
+\func again IMMEDIATE
+\	LIT BRANCH ,dict	\ compile BRANCH
+\	HERE -			\ calculate the offset back
+\	,dict			\ compile the offset here
+\endfunc
+\
+\func case IMMEDIATE
+\	0		\ push 0 to mark the bottom of the stack 
+\endfunc
+\
+\func endcase IMMEDIATE
+\\ begin condition if loop-part repeat
+\	
+\	begin dup 0 != if
+\	dup
+\	HERE swap -	\ calculate the offset from the address saved on the stack
+\	swap !		\ store the offset in the back-filled location
+\	repeat
+\	drop
+\endfunc
+\
+\func to22 IMMEDIATE
+\	\ get next word ( length address )
+\	\ try to find locals dictionary
+\	\ if not found, save in dictionary using count of locals output create local
+\	\ if found output store into local with number
+\	\WORD . LOCALS tree_find .
+\	\dup 0 == if drop 
+\endfunc
+
+\ Basic math operations
+test{
+	2 2 + 4 != if{ " Error plus" psn }
+	5 3 - 2 != if{ " Error sub" psn }
+	5 3 * 15 != if{ " Error multiply" psn }
+	93 5 / 18 != if{ " Error divide" psn }
+	93 5 mod 3 != if{ " Error mod" psn }
+	
+	0x07 0x02 or 7 != if{ " Error or" psn }
+	0x07 0x02 bw-and 2 != if{ " Error bw-and" psn }
+	0x07 0x02 xor 5 != if{ " Error xor" psn }
+	0x07 0x02 >> 1 != if{ " Error >>" psn }
+	0x07 0x02 << 28 != if{ " Error <<" psn }
+	0x07 0x0A bw-clr 5 != if{ " Error bw-clr" psn }
+}
+test .
+FORGET
+
+\ unary operations
+7 bw-not . c  \   (-8)  bitwise not
+7 neg . c  \ (-7)  negate
+7 not . c  \ (0)  logical not
+-7 abs . c  \ (7)  absoulte value
+
+\ logical operators
+1 0 or . c  \ (1)  logical or
+1 0 and . c \ (0)  logical and
+
+\ stack manipulation operators
+3 dup . c \ (3)(3)
+1 2 drop . c \ (1)
+1 2 nip . c \ (2)
+1 2 over . c \ (1)(2)(1)
+1 2 3 pick . c \ (1)(2)(3)(1)
+1 2 swap . c \ (2)(1)
+
+0x40008000 CLOCKS_BASE:
+0x60 CLK_ADC_CTRL:
+0x64 CLK_ADC_DIV:
+
+setUpClockAdc{
+	CLOCKS_BASE CLK_ADC_CTRL + ctrl.
+	ctrl 4 + div.
+	3 8 << div ! \ set divider
+	1 5 << 1 11 << + ctrl ! \ set ctrl
+}
+setUpClockAdc
+
+0x4004C000 ADC_BASE:
+
+getTemperature{
+	ADC_BASE ctrl.
+	ctrl 4 + resultReg.
+	7 4 12 << + dup  ctrl ! readTmpCmd.
+	32 acdReads.
+	0 result.
+	while acdReads 0 != if{
+		readTmpCmd ctrl !
+		while ctrl $ 1 8 << bw-and 0 == if{ }	\ wait for read to finish
+		resultReg $ result + result.		\ read result
+		acdReads 1 - acdReads.
+	}
+	result 5 >>
+	0 ctrl !
+}
+
+getTemperature .
+
+getTempCel{ getTemperature 1000000 * 1241 / 706000 - 172 / 270 swap - }
+
+getTempFar{ getTempCel 9 * 5 / 320 + }
+
+c getTempFar .
+c getTempFar .
+c getTempFar .
+c getTempFar .
+c getTempFar .
+
+
+
+
+
+
+
+
+
+

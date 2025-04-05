@@ -1,0 +1,12 @@
+*.geany
+*.o
+inc/
+obj/
+picoUF2
+program.elf
+program.list
+program.uf2
+tool/headerGenerator
+tool/headerGenerator.c
+tool/fith2StringConst
+src/kernel.c
