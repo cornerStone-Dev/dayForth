@@ -128,7 +128,7 @@ void copyBackward(void *src, void* dst, u32 size);
 void copyForward(void *src, void* dst, u32 size);
 void f_string_enqueue(u8 *string);
 u8* d4th_getWord(u8 *start);
-s32* fromC(s32 *rsp, s32 *psp, u16 *code);
+s32* fromC(s32 *psp, u16 *code);
 
 
 

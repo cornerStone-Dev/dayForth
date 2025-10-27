@@ -375,7 +375,7 @@ void picoInit(void)/*p;*/
 	xipSetup();
 	// we can now read flash addresses
 	// set timer 0 to kick off RMS
-	timer_set(0, 1000);
+	//~ timer_set(0, 1000);
 	//~ treeTest();
 	// process fith kernel stuff
 	//~ startSysTimer();

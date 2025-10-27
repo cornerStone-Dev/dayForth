@@ -140,7 +140,7 @@ static Context dcx;
 #define TOS 0
 #define SCRATCH 1
 #define CTX 4
-#define RSP 4
+#define RSP 3
 #define G1 6
 #define G2 7
 
@@ -794,7 +794,9 @@ d4th_createFuncWord(u8 *text, u32 len)
 	WordEntry *new = d4th_createEntry(text, len);
 	new->type = WORD_FUNC_COMP;
 	*dcx.compileCursor++ = armMov(SCRATCH, 14);
+	*dcx.compileCursor++ = armMov(RSP, 10);
 	*dcx.compileCursor++ = armSubImm(RSP, (12*4));
+	*dcx.compileCursor++ = armMov(10, RSP);
 	*dcx.compileCursor++ = armStrOffset(SCRATCH, RSP, 11);
 }
 
@@ -805,7 +807,7 @@ d4th_return(void)
 		// return after call, convert to jump
 		io_printsn("[INFO] Tail Call.");
 		dcx.compileCursor -= 2;
-		u16 *newTarget = dcx.lastCallTarget + 3;
+		u16 *newTarget = dcx.lastCallTarget + 5;
 		dcx.lastCall		= 0;
 		dcx.lastCallTarget	= 0;
 		u32 branch = armBranch(newTarget - dcx.compileCursor - 2);
@@ -825,6 +827,7 @@ d4th_return(void)
 		dcx.returnMachineCode = dcx.compileCursor;
 		*dcx.compileCursor++ = armLdrOffset(SCRATCH, RSP, 11);
 		*dcx.compileCursor++ = armAddImm(RSP, (12*4));
+		*dcx.compileCursor++ = armMov(10, RSP);
 		*dcx.compileCursor++ = armBx(SCRATCH);
 	}
 }
@@ -859,9 +862,9 @@ d4th_endFunc(void)
 		d4th_forget();
 		goto end;
 	}
-	if (dcx.hasCall==0 && (funcLen==4 || funcLen==5)) {
+	if (dcx.hasCall==0 && (funcLen==6 || funcLen==7)) {
 		io_printsn("[INFO] word will be inlined.");
-		u32 copyAmt = funcLen - 3;
+		u32 copyAmt = funcLen - 5;
 		u16 *to = dcx.compileBase;
 		u16 *from = dcx.compileCursor - copyAmt;
 		for (u32 i = 0; i < copyAmt; i++) {
@@ -883,11 +886,11 @@ d4th_endFunc(void)
 	io_printi(funcLen);
 	io_prints(" instructions for word ");
 	io_printsn((u8*)current->key);
-	//~ u16 *cursor = dcx.compileBase;
-	//~ while (cursor < dcx.compileCursor)
-	//~ {
-		//~ io_printhn(*cursor++);
-	//~ }
+	u16 *cursor = dcx.compileBase;
+	while (cursor < dcx.compileCursor)
+	{
+		io_printhn(*cursor++);
+	}
 	}
 	dcx.compileBase = dcx.compileCursor;
 }
@@ -979,10 +982,10 @@ d4th_interpretWord(WordEntry *word)
 {
 	u16 *code = d4th_getCode(word);
 switch (word->type & 0x3F) {
-	case WORD_FUNC_BUILTIN: dcx.psp = fromC(dcx.rsp, dcx.psp, code); break;
-	case WORD_FUNC_COMP: dcx.psp = fromC(dcx.rsp, dcx.psp, code); break;
-	case WORD_FUNC_INLINE: dcx.psp = fromC(dcx.rsp, dcx.psp, code); break;
-	case WORD_FUNC_INLINE_LO: dcx.psp = fromC(dcx.rsp, dcx.psp, code); break;
+	case WORD_FUNC_BUILTIN: dcx.psp = fromC(dcx.psp, code); break;
+	case WORD_FUNC_COMP: dcx.psp = fromC(dcx.psp, code); break;
+	case WORD_FUNC_INLINE: dcx.psp = fromC(dcx.psp, code); break;
+	case WORD_FUNC_INLINE_LO: dcx.psp = fromC(dcx.psp, code); break;
 	case WORD_END_BLOCK: io_printsn("[ERROR] Cannot close a block in intepreter mode."); break;
 	case WORD_RET: break;
 	case WORD_GLOBAL: if((u32)code&0x02){code++;}d4th_pushValImm((u32)code); break;
@@ -990,10 +993,10 @@ switch (word->type & 0x3F) {
 	case WORD_IF: io_printsn("[ERROR] Cannot 'if{' in intepreter mode."); break;
 	case WORD_ELSE: io_printsn("[ERROR] Cannot '}{' in intepreter mode."); break;
 	case WORD_WHILE: io_printsn("[ERROR] Cannot 'while' in intepreter mode."); break;
-	case WORD_PLUS: dcx.psp = fromC(dcx.rsp, dcx.psp, code); break;
-	case WORD_MINUS: dcx.psp = fromC(dcx.rsp, dcx.psp, code); break;
-	case WORD_LS: dcx.psp = fromC(dcx.rsp, dcx.psp, code); break;
-	case WORD_RS: dcx.psp = fromC(dcx.rsp, dcx.psp, code); break;
+	case WORD_PLUS: dcx.psp = fromC(dcx.psp, code); break;
+	case WORD_MINUS: dcx.psp = fromC(dcx.psp, code); break;
+	case WORD_LS: dcx.psp = fromC(dcx.psp, code); break;
+	case WORD_RS: dcx.psp = fromC(dcx.psp, code); break;
 	case WORD_LPAREN: io_printsn("[ERROR] Cannot '(' in intepreter mode."); break;
 	case WORD_FORGET: d4th_forget(); break;
 	case WORD_LSQBRACKET: /* no op */ break;
@@ -1090,7 +1093,7 @@ void
 dayForthInitP2(WordEntry *last)/*p;*/
 {
 	dcx.psp			= (void*)(END_OF_RAM - 516);
-	dcx.rsp			= (void*)(END_OF_RAM - 1024);
+	//~ dcx.rsp			= (void*)(END_OF_RAM - 1024);
 	dcx.dictionary		= last;
 	dcx.compileBase		= (void*)__bss_end__;
 	dcx.compileCursor	= dcx.compileBase;

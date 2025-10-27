@@ -159,11 +159,12 @@ TOS .req r0
 WRK .req r1
 SC1 .req r2
 SC2 .req r3
-RSP .req r4
+RSP .req r3
 LSP .req r5
 TIP .req r6
 CTX .req r7
 PSP .req sp
+RSP_S .req r10
 
 .macro CTX_comp op, reg
 	\op	\reg, [CTX, #0]
@@ -679,6 +680,8 @@ flashEntry:
 resetAllRegs:
 	ldr	r1,  =END_OF_RAM  ;@INITIAL_STACK
 	mov	sp,   r1
+	ldr	r1,  =END_OF_RAM - 1024
+	mov	RSP_S,  r1
 	bl	d4th_interpretText
 
 .thumb_func
@@ -826,9 +829,9 @@ uart0_txByte: ;@ r0 = data to print
 	lsls	r2, 26 
 	bmi	1b
 	strb	r0,[r1] ;@ write data out the serial port
-	movs	r3, '\n'
+	movs	r2, '\n'
 	cmp	r0, '\r'
-	mov	r0, r3
+	mov	r0, r2
 	beq	1b
 	bx lr
 
@@ -838,10 +841,10 @@ isr_uart0:
 	push	{r4,lr}
 	ldr	r4, =UART0_BASE ;@ get base address of UART
 	ldr	r2, [r4, #UART0_IRMASKSTATUS]
-	movs	r3, 0xFF
-	str	r3, [r4, #UART0_IRCLEAR] ;@ clear interrupts
-	movs	r3, 0x50
-	tst	r2, r3
+	movs	r0, 0xFF
+	str	r0, [r4, #UART0_IRCLEAR] ;@ clear interrupts
+	movs	r0, 0x50
+	tst	r2, r0
 	beq	2f ;@ the interrupt was not on a recieve
 1:	ldr	r2, [r4, #UART0_FR]
 	lsls	r2, 27 
@@ -955,25 +958,25 @@ nextKey:
 	movs	TOS, r4
 	pop	{r4,pc}
 
-define_builtIn_word "tree_add", 0
-	;@~  (Tree **treep, u8 *key, u32 keyLen, void *value)
-	pop	{SC2}
-	pop	{WRK,SC1}
-	bl	tree_add
-	NEXT
-define_builtIn_word "tree_count", 0
-	bl	tree_count
-	POP_TOS
-	NEXT
-define_builtIn_word "tree_free", 0
-	bl	tree_free
-	POP_TOS
-	NEXT
-define_builtIn_word "tree_find", 0
-	;@~  (Tree *tree, u8 *key, u32 keyLen)
-	pop	{WRK,SC1}
-	bl	tree_find
-	NEXT
+;@~ define_builtIn_word "tree_add", 0
+	;@~ ;@  (Tree **treep, u8 *key, u32 keyLen, void *value)
+	;@~ pop	{SC2}
+	;@~ pop	{WRK,SC1}
+	;@~ bl	tree_add
+	;@~ NEXT
+;@~ define_builtIn_word "tree_count", 0
+	;@~ bl	tree_count
+	;@~ POP_TOS
+	;@~ NEXT
+;@~ define_builtIn_word "tree_free", 0
+	;@~ bl	tree_free
+	;@~ POP_TOS
+	;@~ NEXT
+;@~ define_builtIn_word "tree_find", 0
+	;@~ ;@  (Tree *tree, u8 *key, u32 keyLen)
+	;@~ pop	{WRK,SC1}
+	;@~ bl	tree_find
+	;@~ NEXT
 
 .set enum , 0
 WORD_FUNC_BUILTIN = enum
@@ -1062,6 +1065,7 @@ stringLen: ;@ r0 has pointer to start of string, check 4 byte alignment
 2:
 	adds r0, 1
 1:
+	mov	RSP, RSP_S
 	bx   lr
 
 1:
@@ -1070,6 +1074,7 @@ stringLenByte:
 	ldrb r2, [r1, r0]
 	cmp  r2, 0
 	bne  1b
+	mov	RSP, RSP_S
 	bx   lr
 Define_Word "drop", WORD_FUNC_INLINE
 	POP_TOS
@@ -1090,9 +1095,9 @@ Define_Word "pick", WORD_FUNC_INLINE
 	bx	lr
 Define_Word "psn", WORD_FUNC_BUILTIN
 	POP_WRK
-	push	{WRK,lr}
+	push	{WRK,RSP,lr}
 	bl	io_printsn
-	pop	{TOS,pc}
+	pop	{TOS,RSP,pc}
 Define_Word "==", WORD_FUNC_BUILTIN
 	POP_WRK
 	subs	TOS, TOS, WRK
@@ -1138,14 +1143,16 @@ Define_Word ">=", WORD_FUNC_BUILTIN
 1:	movs	TOS, SC1
 	bx	lr
 Define_Word ".", WORD_FUNC_BUILTIN
+	mov	SC1, lr
+	mov	RSP, RSP_S
+	subs	RSP, 48
+	mov	RSP_S, RSP
+	str	SC1, [RSP, 44]
 	ldr	WRK, = END_OF_RAM - 512
 	mov	SC1, PSP
 	subs	WRK, SC1
 	beq	2f
 	PUSH_TOS
-	subs	RSP, 4
-	mov	r3, lr
-	str	r3, [RSP]
 	push	{r4,r5}
 	movs	r4, WRK
 	subs	r5, SC1, 4
@@ -1161,11 +1168,12 @@ Define_Word ".", WORD_FUNC_BUILTIN
 	movs	TOS, '\r'
 	bl	uart0_txByte
 	pop	{r4,r5}
-	ldr	r3, [RSP]
-	adds	RSP, 4
-	mov	lr, r3
 	POP_TOS
-2:	bx	lr
+2:	mov	RSP, RSP_S
+	ldr	SC1, [RSP, 44]
+	adds	RSP, 48
+	mov	RSP_S, RSP
+	bx	SC1
 Define_Word "c", WORD_FUNC_BUILTIN
 	add	r2, sp, 496
 	lsrs	r2, 9
@@ -1340,7 +1348,7 @@ Define_Word "false", WORD_CONSTANT
 	.hword 0
 	.hword 0
 Define_Word "memTest", WORD_FUNC_BUILTIN
-	push	{r0, lr}
+	push	{r0, RSP, lr}
 	bl	startSysTimer
 	bl	endSysTimer
 	bl	io_printin
@@ -1355,27 +1363,30 @@ Define_Word "memTest", WORD_FUNC_BUILTIN
 	bl	free
 	bl	endSysTimer
 	bl	io_printin
-	pop	{r0, pc}
+	pop	{r0, RSP, pc}
 
 
 
 .thumb_func
 .global fromC
-fromC: ;@ r0 = rsp, r1 = psp, r2 = target
+fromC: ;@ r0 = psp, r1 = target
 	push	{r4,r5,r6,r7,lr}
-	mov	r3, sp
-	mov	sp, r1
-	movs	RSP, r0
+	mov	r2, sp
+	mov	sp, r0
+	mov	RSP, RSP_S
 	subs	RSP, 4
-	str	r3, [RSP]
+	mov	RSP_S, RSP
+	str	r2, [RSP]
 	POP_TOS
-	movs	r3, 1
-	orrs	r2, r3
-	blx	r2
+	movs	r2, 1
+	orrs	r1, r2
+	blx	r1
 	PUSH_TOS
 	mov	TOS, sp
-	ldr	r3, [RSP]
-	mov	sp, r3
+	ldr	r1, [RSP]
+	adds	RSP, 4
+	mov	RSP_S, RSP
+	mov	sp, r1
 	pop	{r4,r5,r6,r7,pc}
 
 .thumb_func
