@@ -13,9 +13,10 @@ typedef struct {
 } Uart0Output;
 
 //~ static Uart0Output out;
-static u8       uart0Buffer[256];
-static u32      uart0BuffStartIndex;
-static u32      uart0BuffIndex;
+static u8       uart0IsrBuff[128 + 2];
+static u8       uart0Buffer[256 + 2];
+//~ static u32      uart0BuffStartIndex;
+//~ static u32      uart0BuffIndex;
 
 /*e*/s32
 f_s2i(u8 *b)/*p;*/
@@ -110,37 +111,73 @@ i2sh(s32 in, u8 *out, u32 numDigits)/*p;*/
 	return out;
 }
 
-void bufferAndSend(u32 data)
+void bufferUartInput(u32 data)
 {
-	if (data == 0x08 || data == 0x7F) // backspace
-	{
-		if (uart0BuffIndex > uart0BuffStartIndex)
-		{
-			uart0BuffIndex--;
-			uart0_txByte(0x08);
-			uart0_txByte(' ');
-			uart0_txByte(0x08);
-		}
-		return;
+	u8 *buff = uart0IsrBuff;
+	u32 currentBuff = buff[0];
+	u32 currentIndex = buff[1]++;
+	u8 *base = buff + currentBuff * 32 + 2;
+	base[currentIndex] = data;
+}
+void completeUartInput(void)
+{
+	u8 *buff = uart0IsrBuff;
+	u32 currentBuff = buff[0];
+	u32 currentIndex = buff[1];
+	// move to next buffer, set index to 0
+	buff[0] = (buff[0] + 1) & 3;
+	buff[1] = 0;
+	u8 *base = buff + currentBuff * 32 + 2;
+	base[currentIndex] = 0;
+	f_string_enqueue(base);
+}
+
+s32 f_key(void)
+{
+	u8 *buff = uart0Buffer;
+	u32 currentIndex = buff[1];
+	u8 *base = buff + 2;
+	
+while (1) {
+
+	u32 currChar = base[currentIndex];
+	if (currChar) {
+		buff[1]++;
+		return currChar;
+	} else {
+		currentIndex = 0;
+		buff[1] = currentIndex;
 	}
-	uart0Buffer[uart0BuffIndex++] = data;
-	uart0_txByte(data);
-	//~ io_printi(data);
-	if (data == 0x0D || uart0BuffIndex == 254) // finished line
-	{
-		// add new line and null terminate
-		uart0Buffer[uart0BuffIndex++] = '\n';
-		uart0Buffer[uart0BuffIndex++] = 0;
-		u8 *startOfLine = &uart0Buffer[uart0BuffStartIndex];
-		if (uart0BuffIndex > 128)
+	
+	// gather string
+	while (1) {
+		u32 data = r_key();
+		if (data == 0x08 || data == 0x7F) // backspace
 		{
-			uart0BuffStartIndex = 0;
-			uart0BuffIndex = 0;
-		} else {
-			uart0BuffStartIndex = uart0BuffIndex;
+			if (currentIndex > 0)
+			{
+				currentIndex--;
+				uart0_txByte(0x08);
+				uart0_txByte(' ');
+				uart0_txByte(0x08);
+			}
+			continue;
 		}
-		f_string_enqueue(startOfLine);
+		if (data == 0x0A) {  data = 0x0D; }
+		base[currentIndex++] = data;
+		uart0_txByte(data);
+		//~ // io_printi(data);
+		if (data == 0x0D || currentIndex == 254) // finished line
+		{
+			// add new line and null terminate
+			base[currentIndex++] = '\n';
+			base[currentIndex++] = 0;
+			currentIndex = 0;
+			buff[1] = currentIndex;
+			break;
+		}
 	}
+}
 }
 
 /*e*/

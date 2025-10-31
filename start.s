@@ -654,7 +654,7 @@ flashEntry:
 	;@ set up DMA to clear RAM
 	bl   dmaSetup
 	ldr  r0, = __bss_start__
-	ldr  r1, = __bss_end__  ;@END_OF_RAM
+	ldr  r1, = __bss_end__
 	subs r1, r0
 	bl   setZero
 	;@ configure vector table
@@ -842,18 +842,19 @@ isr_uart0:
 	str	r3, [r4, #UART0_IRCLEAR] ;@ clear interrupts
 	movs	r3, 0x50
 	tst	r2, r3
-	beq	2f ;@ the interrupt was not on a recieve
+	beq	3f ;@ the interrupt was not on a recieve
 1:	ldr	r2, [r4, #UART0_FR]
 	lsls	r2, 27 
 	bmi	2f ;@ no characters
 	ldr	r0, [r4, #UART0_DR]
-	bl	bufferAndSend
+	bl	bufferUartInput
 	b	1b
-2:	pop	{r4,pc}
+2:	bl	completeUartInput
+3:	pop	{r4,pc}
 
 .thumb_func
-.global f_key
-f_key:
+.global r_key
+r_key:
 	push	{r4,lr}
 	adr	r4, stringCurrent
 	ldr	r1, [r4]
@@ -1093,6 +1094,21 @@ Define_Word "psn", WORD_FUNC_BUILTIN
 	push	{WRK,lr}
 	bl	io_printsn
 	pop	{TOS,pc}
+Define_Word "pin", WORD_FUNC_BUILTIN
+	POP_WRK
+	push	{WRK,lr}
+	bl	io_printin
+	pop	{TOS,pc}
+Define_Word "call", WORD_FUNC_BUILTIN
+	mov	SC1, lr
+	subs	RSP, 4
+	str	SC1, [RSP]
+	movs	WRK, TOS
+	POP_TOS
+	blx	WRK
+	ldr	SC1, [RSP]
+	adds	RSP, 4
+	bx	SC1
 Define_Word "==", WORD_FUNC_BUILTIN
 	POP_WRK
 	subs	TOS, TOS, WRK
@@ -1333,6 +1349,16 @@ Define_Word "!h", WORD_FUNC_BUILTIN
 	strh	WRK, [TOS]
 	POP_TOS
 	bx	lr
+Define_Word "ISR_set", WORD_FUNC_BUILTIN
+	lsls		TOS, 2			;@ shift to make an index
+	POP_WRK					;@ pop ISR
+	adr		SC1, forth_v_table	;@ load table address
+	str		WRK, [SC1, TOS]		;@ store ISR to vector table
+	ldr		SC1, =vector_table
+	ldr		WRK, =forthIsrWrapper
+	str		WRK, [SC1, TOS]		;@ store ISR to pico vector table
+	POP_TOS	
+	bx		lr
 Define_Word "true", WORD_CONSTANT
 	.hword 1
 	.hword 0
@@ -1357,7 +1383,8 @@ Define_Word "memTest", WORD_FUNC_BUILTIN
 	bl	io_printin
 	pop	{r0, pc}
 
-
+.balign 4
+.ltorg
 
 .thumb_func
 .global fromC
@@ -1409,8 +1436,86 @@ alarm1ISRx: ;@ interrupt routine. r0-r3,r12 are already preserved
 	pop		{pc}
 
 .balign 4
-periodCount:
-.word	0
+.thumb_func
+.global forthIsrWrapper
+forthIsrWrapper: ;@ interrupt routine. r0-r3,r12 are already preserved
+	push		{RSP,r5,lr}
+	mrs		r0, IPSR		;@ get offset vector
+	lsls		r0, 2			;@ shift to make an index
+	adr		r1, forth_v_table	;@ load table address
+	ldr		RSP, [r1]		;@ load RSP
+	movs		r5, 160
+	lsls		r5, 2			;@ create 640
+	subs		RSP, r5			;@ subtract 640
+	str		RSP, [r1]		;@ put it back for nested interrupts
+	ldr		r0, [r1, r0]		;@ load vector to take
+	blx		r0			;@ call registered vector
+	adr		r1, forth_v_table	;@ load table address
+	adds		RSP, r5			;@ add 640
+	str		RSP, [r1]		;@ restore RSP
+	pop		{RSP,r5,pc}		;@ return from interrupt
+
+.balign 4
+forth_v_table:
+	.word END_OF_RAM - 1024
+	.word reset ;@ has to be offset 4
+	.word REBOOT ;@purgatory  ;@ 2 NMI
+	.word whoisme ;@purgatory  ;@ 3 HardFault
+
+	.word REBOOT ;@ 4 Reserved
+	.word REBOOT   ;@ 5 Reserved
+	.word REBOOT  ;@ 6 Reserved
+	.word REBOOT  ;@ 7 Reserved
+	
+	.word REBOOT  ;@ 8 Reserved
+	.word REBOOT  ;@ 9 Reserved
+	.word REBOOT  ;@ 10 Reserved
+	.word REBOOT  ;@ 11 SVCall
+	
+	.word REBOOT  ;@ 12 Reserved
+	.word REBOOT  ;@ 13 Reserved
+	.word REBOOT  ;@ 14 PendSV isrPendSvCall
+	.word REBOOT  ;@ 15 SysTick
+	
+	.word REBOOT   ;@ 16 external interrupt 0
+	.word REBOOT
+	.word REBOOT
+	.word REBOOT
+	
+	.word REBOOT   ;@ 4
+	.word REBOOT
+	.word REBOOT
+	.word REBOOT
+	
+	.word REBOOT   ;@ 8
+	.word REBOOT
+	.word REBOOT
+	.word REBOOT
+	
+	.word REBOOT   ;@ 12
+	.word REBOOT
+	.word REBOOT
+	.word REBOOT
+	
+	.word REBOOT   ;@ 16
+	.word REBOOT
+	.word REBOOT
+	.word REBOOT
+	
+	.word REBOOT   ;@ 20
+	.word REBOOT
+	.word REBOOT
+	.word REBOOT
+	
+	.word REBOOT   ;@ 24
+	.word REBOOT
+	.word REBOOT	;@ 26 first software defined interrupt
+	.word REBOOT	;@ 27
+	
+	.word REBOOT	;@ 28
+	.word REBOOT
+	.word REBOOT
+	.word REBOOT
 
 
 

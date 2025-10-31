@@ -663,6 +663,7 @@ d4th_createConstWord(u8 *text, u32 len)
 {
 	if (dcx.compileMode != 0) { io_printsn("[ERROR] Cannot create constant in compile mode."); return; }
 	s32 val = d4th_popValImm();
+	text[len] = 0;
 	WordEntry *word = d4th_lookUpInDictionary(text, len);
 	if (word && word->type == WORD_CONSTANT) {
 		u16 *code = d4th_getCode(word);
@@ -675,6 +676,39 @@ d4th_createConstWord(u8 *text, u32 len)
 	*dcx.compileBase++ = val & 0xFFFF;
 	*dcx.compileBase++ = val >> 16;
 	dcx.compileCursor = dcx.compileBase;
+}
+
+// get address of word 
+static u16*
+d4th_addrOfWord(u8 *text, u32 len)
+{
+	text[len] = 0;
+	WordEntry *word = d4th_lookUpInDictionary(text, len);
+	u16 *code = 0;
+	if (word) {
+	code = d4th_getCode(word);
+	switch (word->type & 0x3F) {
+	case WORD_FUNC_BUILTIN:  break;
+	case WORD_FUNC_COMP:  break;
+	case WORD_FUNC_INLINE:  break;
+	case WORD_FUNC_INLINE_LO:  break;
+	default: io_printsn("[ERROR] Word is wrong type to take address."); code = 0; break;
+	}
+	} else { io_printsn("[ERROR] Cannot find word to take address."); }
+	return code;
+}
+
+// get address of word 
+static void
+d4th_addrOfWordPut(u8 *text, u32 len)
+{
+	u16 *code = d4th_addrOfWord(text, len);
+	if (code == 0) { return; } 
+	if (dcx.compileMode == 0) {
+		d4th_pushValImm((s32)code + 1);
+	} else {
+		d4th_compValImm((s32)code + 1);
+	}
 }
 
 static void
@@ -701,6 +735,7 @@ consumeCharLit(void)/*i;*/
 		case 'n' : lit = 0x0A; break;
 		case 'r' : lit = 0x0D; break;
 		case 't' : lit = 0x09; break;
+		case '"' : lit = '"' ; break;
 		default  :  break;
 	}
 	return lit + 0x10000;
@@ -820,7 +855,7 @@ d4th_return(void)
 	u32 branch = armBranch(dcx.returnMachineCode - dcx.compileCursor - 2);
 	if (branch != -1) {
 		*dcx.compileCursor = branch;
-		if ( (branch+1) != *(dcx.compileCursor-1) ) {dcx.compileCursor++;}
+		/*if ( (branch+1) != *(dcx.compileCursor-1) )*/ {dcx.compileCursor++;}
 	} else {
 		dcx.returnMachineCode = dcx.compileCursor;
 		*dcx.compileCursor++ = armLdrOffset(SCRATCH, RSP, 11);
@@ -1080,6 +1115,7 @@ while (1) {
 	case '{' : d4th_createFuncWord(start, len-1); continue;
 	case ';' : d4th_createGlobalWord(start, len-1); continue;
 	case '.' : d4th_localWord(start, len-1); continue;
+	case '@' : d4th_addrOfWordPut(start, len-1); continue;
 	default: io_prints(start); io_printsn(" Word not found"); continue;
 	}
 }

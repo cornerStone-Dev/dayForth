@@ -124,6 +124,7 @@ void pengumZalloc(void);
 void pengumRealloc(void);
 void pengumAnd(void);
 s32 f_key(void);
+s32 r_key(void);
 void copyBackward(void *src, void* dst, u32 size);
 void copyForward(void *src, void* dst, u32 size);
 void f_string_enqueue(u8 *string);
