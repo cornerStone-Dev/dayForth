@@ -119,10 +119,11 @@
 
 // TODO LIST
 // make sure optimizations are correctly canceled in control flow ends
-// Collapse if else when there is a constant input condition.
-// Optimize conditionals
 // Case statement (takes care of basic if else if else pattern) 
 //
+// DONE: Optimize conditionals
+// DONE: Collapse if else when there is a constant input condition.
+// DONE: Globals and Constants are compiled as functions
 // DONE: optimize + - << >> with constants
 // DONE: first pass inline ability
 // DONE: '(' processing
@@ -482,6 +483,7 @@ enum{
 	WORD_END_BLOCK,
 	WORD_RET,
 	WORD_GLOBAL,
+	WORD_CONSTANT_SMALL,
 	WORD_CONSTANT,
 	WORD_IF,
 	WORD_ELSE,
@@ -497,6 +499,12 @@ enum{
 	WORD_MAKE_LIT,
 	WORD_DOUBLEQUOTES,
 	WORD_SINGLEQUOTES,
+	WORD_EQUALS,
+	WORD_NOT_EQUALS,
+	WORD_LESS_THAN,
+	WORD_GREATER_THAN,
+	WORD_LESS_THAN_EQUAL,
+	WORD_GREATER_THAN_EQUAL,
 	WORD_LOCAL,
 };
 
@@ -601,6 +609,9 @@ static void d4th_compValImm(s32 value)
 	if (value >= 0 && value <= 255) {
 		dcx.lastSmallConst = dcx.compileCursor;
 		*dcx.compileCursor++ = armMovImm(TOS, value);
+	} else if (value >= -255 && value <= -1) {
+		*dcx.compileCursor++ = armMovImm(TOS, -value);
+		*dcx.compileCursor++ = 0x4240;
 	} else {
 		if ((u32)dcx.compileCursor & 0x02) { *dcx.compileCursor++ = armMov(8, 8); }
 		*(u32*)dcx.compileCursor = 0xE0014800;
@@ -663,19 +674,28 @@ d4th_createConstWord(u8 *text, u32 len)
 {
 	if (dcx.compileMode != 0) { io_printsn("[ERROR] Cannot create constant in compile mode."); return; }
 	s32 val = d4th_popValImm();
+	s32 type = val >= -255 && val <= 255 ? WORD_CONSTANT_SMALL : WORD_CONSTANT;
 	text[len] = 0;
 	WordEntry *word = d4th_lookUpInDictionary(text, len);
-	if (word && word->type == WORD_CONSTANT) {
-		u16 *code = d4th_getCode(word);
-		*code++ = val & 0xFFFF;
-		*code = val >> 16;
+	if (word&&type==WORD_CONSTANT_SMALL&&word->type==WORD_CONSTANT_SMALL) {
+		s16 *code = (s16*)d4th_getCode(word);
+		*code = val;
 		return;
 	}
 	WordEntry *new = d4th_createEntry(text, len);
-	new->type = WORD_CONSTANT;
-	*dcx.compileBase++ = val & 0xFFFF;
-	*dcx.compileBase++ = val >> 16;
-	dcx.compileCursor = dcx.compileBase;
+	new->type = type;
+	if (type == WORD_CONSTANT_SMALL) {
+		*dcx.compileBase++ = val;
+		dcx.compileCursor = dcx.compileBase;
+	} else { // WORD_CONSTANT
+		*dcx.compileBase++ = armPush(1<<TOS);
+		if ((u32)dcx.compileBase & 0x02) { *dcx.compileBase++ = armMov(8, 8); }
+		*(u32*)dcx.compileBase = 0x47704800;
+		dcx.compileBase+= 2;
+		*(u32*)dcx.compileBase = val;
+		dcx.compileBase+= 2;
+		dcx.compileCursor = dcx.compileBase;
+	}
 }
 
 // get address of word 
@@ -814,10 +834,13 @@ d4th_createGlobalWord(u8 *text, u32 len)
 	WordEntry *new = d4th_createEntry(text, len);
 	s32 val = d4th_popValImm();
 	new->type = WORD_GLOBAL;
-	if ((u32)dcx.compileCursor & 0x02) { *dcx.compileCursor++ = 0; }
-	*(u32*)dcx.compileCursor = val;
-	dcx.compileCursor+= 2;
-	dcx.compileBase = dcx.compileCursor;
+	*dcx.compileBase++ = armPush(1<<TOS);
+	if ((u32)dcx.compileBase & 0x02) { *dcx.compileBase++ = armMov(8, 8); }
+	*(u32*)dcx.compileBase = 0x4770A000;
+	dcx.compileBase+= 2;
+	*(u32*)dcx.compileBase = val;
+	dcx.compileBase+= 2;
+	dcx.compileCursor = dcx.compileBase;
 }
 
 static void
@@ -918,11 +941,11 @@ d4th_endFunc(void)
 	io_printi(funcLen);
 	io_prints(" instructions for word ");
 	io_printsn((u8*)current->key);
-	//~ u16 *cursor = dcx.compileBase;
-	//~ while (cursor < dcx.compileCursor)
-	//~ {
-		//~ io_printhn(*cursor++);
-	//~ }
+	u16 *cursor = dcx.compileBase;
+	while (cursor < dcx.compileCursor)
+	{
+		io_printhn(*cursor++);
+	}
 	}
 	dcx.compileBase = dcx.compileCursor;
 }
@@ -933,27 +956,64 @@ d4th_if(u16 *code)/*i;*/
 	s32 block = d4th_popValImm();
 	s32 delta = 0;
 	if (block == BLOCK_WHILE) {
-		delta = 3;
+		delta = BLOCK_WHILE_COND - BLOCK_COND;
 	} else {
 		d4th_pushValImm(block);
 	}
-	*dcx.compileCursor++ = *code++;
-	*dcx.compileCursor++ = *code++;
-	*dcx.compileCursor = 0;
+	if (dcx.compileCursor-2 == dcx.lastCompare) {
+		// optimize comparison immediately before if
+		dcx.compileCursor -= 2;
+		if (dcx.compileCursor-1 == dcx.lastSmallConst) {
+			// we just pushed a small constant, re-write
+			dcx.compileCursor -= 2;
+			u32 val = (*dcx.lastSmallConst<<24)>>24;
+			*dcx.compileCursor++ = (*code++) + val;
+			*dcx.compileCursor++ = *code;
+			*dcx.compileCursor   = dcx.condCode;
+		} else {
+			code += 2;
+			*dcx.compileCursor++ = *code++;
+			*dcx.compileCursor++ = *code++;
+			*dcx.compileCursor++ = *code;
+			*dcx.compileCursor   = dcx.condCode;
+		}
+	} else if (dcx.compileCursor-1 == dcx.lastSmallConst) {
+		// we just pushed a small constant, re-write
+		dcx.compileCursor -= 2;
+		u32 val = (*dcx.lastSmallConst<<24)>>24;
+		*dcx.compileCursor   = val + 0x100;
+	} else {
+		*dcx.compileCursor++ = *code++;
+		*dcx.compileCursor++ = *code;
+		*dcx.compileCursor = 0;
+	}
 	d4th_pushValImm((s32)dcx.compileCursor);
 	dcx.compileCursor++;
 	d4th_pushValImm(BLOCK_COND+delta);
 }
 
-/*e*/static void
+/*e*/static u32
 d4th_closeIf(void)/*i;*/
 {
 	dcx.lastSmallConst = 0;
 	dcx.lastCall = 0;
+	dcx.lastCompare = 0;
 	u16 *code = (u16*)d4th_popValImm();
-	s32 res = armCond(COND_BEQ,dcx.compileCursor - code - 2);
-	if (res == -1) { io_printsn("[ERROR] branch is too large."); dcx.error=1;  return; }
+	u32 cond = *code;
+	if (cond>>8) {
+		u32 smallConst = cond & 0xFF;
+		if (smallConst) {
+			*code = armMov(8, 8); // if is always true
+			return 1;
+		} else {
+			dcx.compileCursor = code; // if is always false
+			return 2;
+		}
+	}
+	s32 res = armCond(cond,dcx.compileCursor - code - 2);
+	if (res == -1) { io_printsn("[ERROR] branch is too large."); dcx.error=1; return 0; }
 	*code = res;
+	return 0;
 }
 
 /*e*/static void
@@ -961,8 +1021,16 @@ d4th_closeElse(void)/*i;*/
 {
 	dcx.lastSmallConst = 0;
 	dcx.lastCall = 0;
+	dcx.lastCompare = 0;
 	u16*code=(u16*)d4th_popValImm();
-	*code=armBranch(dcx.compileCursor-code-2);
+	u32 cond = *code;
+	if (cond == 1) {
+		dcx.compileCursor = code; // drop else block
+	} else if (cond == 2) {
+		*code = armMov(8, 8); // else always runs
+	} else {
+		*code=armBranch(dcx.compileCursor-code-2);
+	}
 }
 
 /*e*/static void
@@ -973,7 +1041,12 @@ d4th_closeWhile(void)/*i;*/
 	*dcx.compileCursor=armBranch(code-dcx.compileCursor-2);
 	dcx.compileCursor++;
 	d4th_pushValImm(t);
-	d4th_closeIf();
+	u32 ifType = d4th_closeIf();
+	if (ifType == 1) {
+		// infinite loop, do nothing
+	} else if (ifType == 2) {
+		// loop never happens, nothing for us to do
+	}
 }
 
 /*e*/static void
@@ -983,7 +1056,13 @@ d4th_else(void)/*i;*/
 	if (block != BLOCK_COND) { io_printsn("[ERROR] else must match if."); dcx.error=1; return; }
 	u16 *elseLoc = dcx.compileCursor;
 	*dcx.compileCursor++ = 0;
-	d4th_closeIf();
+	u32 ifType = d4th_closeIf();
+	if (ifType == 1) {
+		*elseLoc = 1;
+	} else if (ifType == 2) {
+		elseLoc = dcx.compileCursor;
+		*dcx.compileCursor++ = 2;
+	}
 	d4th_pushValImm((s32)elseLoc);
 	d4th_pushValImm(BLOCK_ELSE);
 }
@@ -1020,8 +1099,9 @@ switch (word->type & 0x3F) {
 	case WORD_FUNC_INLINE_LO: dcx.psp = fromC(dcx.rsp, dcx.psp, code); break;
 	case WORD_END_BLOCK: io_printsn("[ERROR] Cannot close a block in intepreter mode."); break;
 	case WORD_RET: break;
-	case WORD_GLOBAL: if((u32)code&0x02){code++;}d4th_pushValImm((u32)code); break;
-	case WORD_CONSTANT: d4th_pushValImm(*code+(code[1]<<16)); break;
+	case WORD_GLOBAL: dcx.psp = fromC(dcx.rsp, dcx.psp, code); break;
+	case WORD_CONSTANT_SMALL: d4th_pushValImm(*(s16*)code); break;
+	case WORD_CONSTANT: dcx.psp = fromC(dcx.rsp, dcx.psp, code); break;
 	case WORD_IF: io_printsn("[ERROR] Cannot 'if{' in intepreter mode."); break;
 	case WORD_ELSE: io_printsn("[ERROR] Cannot '}{' in intepreter mode."); break;
 	case WORD_WHILE: io_printsn("[ERROR] Cannot 'while' in intepreter mode."); break;
@@ -1036,6 +1116,12 @@ switch (word->type & 0x3F) {
 	case WORD_MAKE_LIT: d4th_makeLit(); break;
 	case WORD_DOUBLEQUOTES: io_printsn("[ERROR] Cannot '\"' in intepreter mode."); break;
 	case WORD_SINGLEQUOTES: d4th_captureChar(); break;
+	case WORD_EQUALS: dcx.psp = fromC(dcx.rsp, dcx.psp, code); break;
+	case WORD_NOT_EQUALS: dcx.psp = fromC(dcx.rsp, dcx.psp, code); break;
+	case WORD_LESS_THAN: dcx.psp = fromC(dcx.rsp, dcx.psp, code); break;
+	case WORD_GREATER_THAN: dcx.psp = fromC(dcx.rsp, dcx.psp, code); break;
+	case WORD_LESS_THAN_EQUAL: dcx.psp = fromC(dcx.rsp, dcx.psp, code); break;
+	case WORD_GREATER_THAN_EQUAL: dcx.psp = fromC(dcx.rsp, dcx.psp, code); break;
 }
 }
 
@@ -1051,8 +1137,9 @@ switch (word->type & 0x3F) {
 	case WORD_FUNC_INLINE_LO: mc_localLoadOpt(code); break;
 	case WORD_END_BLOCK: d4th_endBlock(); break;
 	case WORD_RET: d4th_return(); break;
-	case WORD_GLOBAL: if((u32)code&0x02){code++;}d4th_compValImm((u32)code); break;
-	case WORD_CONSTANT: d4th_compValImm(*code+(code[1]<<16)); break;
+	case WORD_GLOBAL: callWord((u32)code); break;
+	case WORD_CONSTANT_SMALL: d4th_compValImm(*(s16*)code); break;
+	case WORD_CONSTANT: callWord((u32)code); break;
 	case WORD_IF: d4th_if(code); break;
 	case WORD_ELSE: d4th_else(); break;
 	case WORD_WHILE: d4th_while(); break;
@@ -1067,6 +1154,18 @@ switch (word->type & 0x3F) {
 	case WORD_MAKE_LIT: io_printsn("[ERROR] Cannot 'LIT' in compiler mode."); dcx.error=1; break;
 	case WORD_DOUBLEQUOTES: d4th_captureString(); break;
 	case WORD_SINGLEQUOTES: d4th_compileChar(); break;
+	case WORD_EQUALS: dcx.lastCompare = dcx.compileCursor;
+	dcx.condCode = COND_BNE; callWord((u32)code); break;
+	case WORD_NOT_EQUALS: dcx.lastCompare = dcx.compileCursor;
+	dcx.condCode = COND_BEQ; callWord((u32)code); break;
+	case WORD_LESS_THAN: dcx.lastCompare = dcx.compileCursor;
+	dcx.condCode = COND_BGE; callWord((u32)code); break;
+	case WORD_GREATER_THAN: dcx.lastCompare = dcx.compileCursor;
+	dcx.condCode = COND_BLE; callWord((u32)code); break;
+	case WORD_LESS_THAN_EQUAL: dcx.lastCompare = dcx.compileCursor;
+	dcx.condCode = COND_BGT; callWord((u32)code); break;
+	case WORD_GREATER_THAN_EQUAL: dcx.lastCompare = dcx.compileCursor;
+	dcx.condCode = COND_BLT; callWord((u32)code); break;
 }
 }
 

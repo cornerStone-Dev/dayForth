@@ -427,6 +427,7 @@ typedef struct Context {
 	u8		error;
 	u8		compileMode;
 	u8		hasCall;
+	u8		condCode;
 	s32		*psp;
 	s32		*rsp;
 	WordEntry	*dictionary;
@@ -438,6 +439,7 @@ typedef struct Context {
 	u16		*lastCallTarget;
 	u16		*lastSmallConst;
 	u16		*lastLocalLoad;
+	u16		*lastCompare;
 } Context;
 
 typedef struct Event {

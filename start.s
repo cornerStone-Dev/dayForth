@@ -421,9 +421,9 @@ vector_table:
 	.word REBOOT  ;@ 15 SysTick
 	
 	.word alarm1ISRx   ;@ 16 external interrupt 0
-	.word alarm2ISR
-	.word alarm3ISR
-	.word alarm4ISR
+	.word REBOOT
+	.word REBOOT
+	.word REBOOT
 	
 	.word REBOOT   ;@ 4
 	.word REBOOT
@@ -991,6 +991,8 @@ WORD_RET = enum
 .set enum , enum + 1
 WORD_GLOBAL = enum
 .set enum , enum + 1
+WORD_CONSTANT_SMALL = enum
+.set enum , enum + 1
 WORD_CONSTANT = enum
 .set enum , enum + 1
 WORD_IF = enum
@@ -1020,6 +1022,18 @@ WORD_MAKE_LIT = enum
 WORD_DOUBLEQUOTES = enum
 .set enum , enum + 1
 WORD_SINGLEQUOTES = enum
+.set enum , enum + 1
+WORD_EQUALS = enum
+.set enum , enum + 1
+WORD_NOT_EQUALS = enum
+.set enum , enum + 1
+WORD_LESS_THAN = enum
+.set enum , enum + 1
+WORD_GREATER_THAN = enum
+.set enum , enum + 1
+WORD_LESS_THAN_EQUAL = enum
+.set enum , enum + 1
+WORD_GREATER_THAN_EQUAL = enum
 .set enum , enum + 1
 
 .balign 4
@@ -1109,19 +1123,19 @@ Define_Word "call", WORD_FUNC_BUILTIN
 	ldr	SC1, [RSP]
 	adds	RSP, 4
 	bx	SC1
-Define_Word "==", WORD_FUNC_BUILTIN
+Define_Word "==", WORD_EQUALS
 	POP_WRK
 	subs	TOS, TOS, WRK
 	negs	WRK, TOS
 	adcs	TOS, WRK
 	bx	lr
-Define_Word "!=", WORD_FUNC_BUILTIN
+Define_Word "!=", WORD_NOT_EQUALS
 	POP_WRK
 	subs	TOS, TOS, WRK
 	subs	WRK, TOS, #1
 	sbcs	TOS, WRK
 	bx	lr
-Define_Word "<", WORD_FUNC_BUILTIN
+Define_Word "<", WORD_LESS_THAN
 	POP_WRK
 	movs	SC1, #1
 	cmp	WRK, TOS
@@ -1129,7 +1143,7 @@ Define_Word "<", WORD_FUNC_BUILTIN
 	movs	SC1, #0
 1:	movs	TOS, SC1
 	bx	lr
-Define_Word ">", WORD_FUNC_BUILTIN
+Define_Word ">", WORD_GREATER_THAN
 	POP_WRK
 	movs	SC1, #1
 	cmp	WRK, TOS
@@ -1137,7 +1151,7 @@ Define_Word ">", WORD_FUNC_BUILTIN
 	movs	SC1, #0
 1:	movs	TOS, SC1
 	bx	lr
-Define_Word "<=", WORD_FUNC_BUILTIN
+Define_Word "<=", WORD_LESS_THAN_EQUAL
 	POP_WRK
 	movs	SC1, #1
 	cmp	WRK, TOS
@@ -1145,7 +1159,7 @@ Define_Word "<=", WORD_FUNC_BUILTIN
 	movs	SC1, #0
 1:	movs	TOS, SC1
 	bx	lr
-Define_Word ">=", WORD_FUNC_BUILTIN
+Define_Word ">=", WORD_GREATER_THAN_EQUAL
 	POP_WRK
 	movs	SC1, #1
 	cmp	WRK, TOS
@@ -1207,10 +1221,13 @@ Define_Word "'", WORD_SINGLEQUOTES
 Define_Word "if{", WORD_IF
 	cmp	TOS, 0
 	POP_TOS
+	POP_WRK
+	cmp	WRK, TOS
+	POP_TOS
 Define_Word "key", WORD_FUNC_BUILTIN
 	PUSH_TOS
 	push	{lr}
-	bl	f_key
+	bl	r_key
 	POP_WRK
 	bx	WRK
 Define_Word "+", WORD_PLUS
@@ -1359,10 +1376,15 @@ Define_Word "ISR_set", WORD_FUNC_BUILTIN
 	str		WRK, [SC1, TOS]		;@ store ISR to pico vector table
 	POP_TOS	
 	bx		lr
-Define_Word "true", WORD_CONSTANT
+Define_Word "timerSet", WORD_FUNC_BUILTIN
+	pop		{WRK, SC1}		;@ pop microseconds
+	push		{SC1, lr}
+	bl		timer_set
+	pop		{TOS, pc}
+Define_Word "true", WORD_CONSTANT_SMALL
 	.hword 1
 	.hword 0
-Define_Word "false", WORD_CONSTANT
+Define_Word "false", WORD_CONSTANT_SMALL
 	.hword 0
 	.hword 0
 Define_Word "memTest", WORD_FUNC_BUILTIN
@@ -1444,14 +1466,14 @@ forthIsrWrapper: ;@ interrupt routine. r0-r3,r12 are already preserved
 	lsls		r0, 2			;@ shift to make an index
 	adr		r1, forth_v_table	;@ load table address
 	ldr		RSP, [r1]		;@ load RSP
-	movs		r5, 160
-	lsls		r5, 2			;@ create 640
-	subs		RSP, r5			;@ subtract 640
+	movs		r5, 128
+	lsls		r5, 2			;@ create 512
+	subs		RSP, r5			;@ subtract 512
 	str		RSP, [r1]		;@ put it back for nested interrupts
 	ldr		r0, [r1, r0]		;@ load vector to take
 	blx		r0			;@ call registered vector
 	adr		r1, forth_v_table	;@ load table address
-	adds		RSP, r5			;@ add 640
+	adds		RSP, r5			;@ add 512
 	str		RSP, [r1]		;@ restore RSP
 	pop		{RSP,r5,pc}		;@ return from interrupt
 

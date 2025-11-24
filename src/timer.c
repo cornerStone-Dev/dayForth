@@ -46,38 +46,20 @@ timerInit(void)/*p;*/
 }
 
 /*e*/
-s32 timer_set(u32 selectedTimer, u32 micoseconds)/*p;*/
+void timer_set(u32 selectedTimer, u32 micoseconds)/*p;*/
 {
+	TimerMemMap *timer	= (void*)TIMER_BASE;
+	timer->intr		= 1<<selectedTimer;
+	timer->armed		= 1<<selectedTimer;
+	if (micoseconds == 0) {  return; }
+	u32 currentTime		= timer->timeReadLowRaw;
 	if (micoseconds < 10) { micoseconds = 10; }
-	u32 retVal = 0;
-	TimerMemMap *timer = (void*)TIMER_BASE;
-	u32 currentTime = timer->timeReadLowRaw;
-	u32 targetTime = currentTime + micoseconds;
+	u32 targetTime		= currentTime + micoseconds;
 	timer->alarm[selectedTimer] = targetTime;
-	return retVal;
 }
 
 static u32 periodCount;
-static u32 alarmClockValue;
-
-/*e*/u32
-setAlarmClockValue(u32 increment)/*p;*/
-{
-	TimerMemMap *timer = (void*)TIMER_BASE;
-	u32 currentTime = timer->timeReadLowRaw;
-	alarmClockValue = currentTime + increment;
-	return alarmClockValue;
-}
-
-/*e*/
-void alarm1ISR_HK(void)/*p;*/
-{
-	TimerMemMap *timer = (void*)TIMER_BASE;
-	u32 currentAlarm = timer->ints;
-	timer->intr = currentAlarm;
-	alarmClockValue += 2500;
-	timer->alarm[0] = alarmClockValue;
-}
+//~ static u32 alarmClockValue;
 
 /*e*/
 void alarm1ISR(void)/*p;*/
@@ -124,36 +106,6 @@ void alarm1ISR(void)/*p;*/
 	//~ *intSet = intsToSet;
 	// increment period count
 	periodCount++;
-}
-
-/*e*/
-void alarm2ISR(void)/*p;*/
-{
-	TimerMemMap *timer = (void*)TIMER_BASE;
-	u32 currentAlarm = timer->ints;
-	timer->intr = currentAlarm;
-	// reset timer
-	//~ timer_set(1, 15*1000*1000);
-	// frame start
-	// turn on frame
-	//~ u32 *intSet = (void*)PPB_INTERRUPT_SET_PEND;
-	//~ *intSet = (1<<28);
-}
-
-/*e*/
-void alarm3ISR(void)/*p;*/
-{
-	TimerMemMap *timer = (void*)TIMER_BASE;
-	u32 currentAlarm = timer->ints;
-	timer->intr = currentAlarm;
-}
-
-/*e*/
-void alarm4ISR(void)/*p;*/
-{
-	TimerMemMap *timer = (void*)TIMER_BASE;
-	u32 currentAlarm = timer->ints;
-	timer->intr = currentAlarm;
 }
 
 /*

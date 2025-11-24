@@ -185,6 +185,16 @@ c getTempFar .
 c getTempFar .
 c getTempFar .
 
+\0x40054000 TIMER_BASE:
+\timer.lowRaw{ 40 + }
+\timer.alarms{ 16 + }
+
+\timerSet3{ ( micoseconds selectedTimer ) \ 3 + 4 = 7 T:12
+\	TIMER_BASE dup timer. \ 5 + 1 + 2 = 8 T:12
+\	timer.lowRaw $ micoseconds + \ target time 1 + 1 + 2 = 4 T:6
+\	timer timer.alarms selectedTimer 2 << + ! \ 2 + 1 + 2 + 1 + 2 + 2 = 10 T:25
+\} \ 1 T:7
+
 
 
 

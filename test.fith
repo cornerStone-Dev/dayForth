@@ -261,3 +261,37 @@ thesame{ ( a1 a2 a3 a4 a5 ) a1 a2 a3 a4 a5 }
 
 
 \ test.fith end
+
+
+\ rework as RMS pengum
+timerSet{ ( micoseconds selectedTimer ) \ 2 + 2 = 4 T:7
+	TIMER_BASE dup timer. \ 4 + 1 + 1 = 6 T:7
+	timer.lowRaw $ micoseconds + \ target time 1 + 1 + 2 = 4 T:5
+	timer timer.alarms selectedTimer 2 << + ! \ 1 + 1 + 1 + 1 + 1 + 1 = 6 T:9
+} \ 1 T:7
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
