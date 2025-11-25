@@ -1035,6 +1035,8 @@ WORD_LESS_THAN_EQUAL = enum
 .set enum , enum + 1
 WORD_GREATER_THAN_EQUAL = enum
 .set enum , enum + 1
+WORD_CASE = enum
+.set enum , enum + 1
 
 .balign 4
 	.balign 2
@@ -1208,6 +1210,7 @@ Define_Word "swap", WORD_FUNC_BUILTIN
 	movs	TOS, WRK
 	bx	lr
 Define_Word "}", WORD_END_BLOCK
+Define_Word "case{", WORD_CASE
 Define_Word "[", WORD_LSQBRACKET
 Define_Word "]", WORD_RSQBRACKET
 Define_Word "LIT", WORD_MAKE_LIT

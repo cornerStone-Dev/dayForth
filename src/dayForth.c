@@ -118,9 +118,10 @@
  * */
 
 // TODO LIST
-// make sure optimizations are correctly canceled in control flow ends
-// Case statement (takes care of basic if else if else pattern) 
 //
+//
+// DONE: make sure optimizations are correctly canceled in control flow ends
+// DONE: Case statement (takes care of basic if else if else pattern) 
 // DONE: Optimize conditionals
 // DONE: Collapse if else when there is a constant input condition.
 // DONE: Globals and Constants are compiled as functions
@@ -505,6 +506,7 @@ enum{
 	WORD_GREATER_THAN,
 	WORD_LESS_THAN_EQUAL,
 	WORD_GREATER_THAN_EQUAL,
+	WORD_CASE,
 	WORD_LOCAL,
 };
 
@@ -514,6 +516,8 @@ enum{
 	BLOCK_ELSE,
 	BLOCK_WHILE,
 	BLOCK_WHILE_COND,
+	BLOCK_CASE,
+	BLOCK_CASE_COND,
 };
 
 enum{
@@ -911,7 +915,7 @@ d4th_endFunc(void)
 	dcx.compileMode = 0;
 	WordEntry *current = dcx.dictionary;
 	u32 funcLen = dcx.compileCursor - dcx.compileBase;
-	if (dcx.error != 0 || funcLen <= 3) {
+	if (dcx.error != 0 || funcLen <= 2) {
 		dcx.error=0;
 		io_printsn("[ERROR] word canceled due to error.");
 		d4th_forget();
@@ -951,12 +955,22 @@ d4th_endFunc(void)
 }
 
 /*e*/static void
+d4th_case(u16 *code)/*i;*/
+{
+	d4th_pushValImm(0);
+	d4th_pushValImm(BLOCK_CASE);
+}
+
+/*e*/static void
 d4th_if(u16 *code)/*i;*/
 {
 	s32 block = d4th_popValImm();
-	s32 delta = 0;
+	s32 newBlock = BLOCK_COND;
 	if (block == BLOCK_WHILE) {
-		delta = BLOCK_WHILE_COND - BLOCK_COND;
+		newBlock = BLOCK_WHILE_COND;
+	} else if (block == BLOCK_CASE) {
+		newBlock = BLOCK_CASE_COND;
+		d4th_pushValImm(block);
 	} else {
 		d4th_pushValImm(block);
 	}
@@ -989,7 +1003,7 @@ d4th_if(u16 *code)/*i;*/
 	}
 	d4th_pushValImm((s32)dcx.compileCursor);
 	dcx.compileCursor++;
-	d4th_pushValImm(BLOCK_COND+delta);
+	d4th_pushValImm(newBlock);
 }
 
 /*e*/static u32
@@ -1034,13 +1048,54 @@ d4th_closeElse(void)/*i;*/
 }
 
 /*e*/static void
+d4th_closeCaseCond(void)/*i;*/
+{
+	u16 *elseLoc = dcx.compileCursor;
+	dcx.compileCursor++;
+	u32 ifType = d4th_closeIf();
+	if (ifType == 1) {
+		/* nothing */
+	} else if (ifType == 2) {
+		elseLoc = dcx.compileCursor;
+		dcx.compileCursor++;
+	}
+	s32 caseBlock = d4th_popValImm();
+	if (caseBlock != BLOCK_CASE) { io_printsn("[ERROR] expecting case block."); dcx.error=1; return; }
+	u16*code=(u16*)d4th_popValImm();
+	if (code == 0) {
+		*elseLoc = 0;
+	} else {
+		*elseLoc = elseLoc - code;
+	}
+	d4th_pushValImm((s32)elseLoc);
+	d4th_pushValImm(BLOCK_CASE);
+}
+
+/*e*/static void
+d4th_closeCase(void)/*i;*/
+{
+	dcx.lastSmallConst = 0;
+	dcx.lastCall = 0;
+	dcx.lastCompare = 0;
+	s32 data;
+	u16*code=(u16*)d4th_popValImm();
+	if (code) {
+		do {
+		data = *code;
+		*code = armBranch(dcx.compileCursor-code-2);
+		code = code - data;
+		} while (data != 0);
+	}
+}
+
+/*e*/static void
 d4th_closeWhile(void)/*i;*/
 {
 	s32 t=d4th_popValImm();
 	u16*code=(u16*)d4th_popValImm();
 	*dcx.compileCursor=armBranch(code-dcx.compileCursor-2);
 	dcx.compileCursor++;
-	d4th_pushValImm(t);
+	d4th_pushValImm(t); // push back for d4th_closeIf()
 	u32 ifType = d4th_closeIf();
 	if (ifType == 1) {
 		// infinite loop, do nothing
@@ -1085,6 +1140,8 @@ d4th_endBlock(void)
 	case BLOCK_COND:{ d4th_closeIf(); break;}
 	case BLOCK_ELSE:{ d4th_closeElse(); break;}
 	case BLOCK_WHILE_COND:{ d4th_closeWhile(); break;}
+	case BLOCK_CASE:{ d4th_closeCase(); break;}
+	case BLOCK_CASE_COND:{ d4th_closeCaseCond(); break;}
 	}
 }
 
@@ -1122,6 +1179,7 @@ switch (word->type & 0x3F) {
 	case WORD_GREATER_THAN: dcx.psp = fromC(dcx.rsp, dcx.psp, code); break;
 	case WORD_LESS_THAN_EQUAL: dcx.psp = fromC(dcx.rsp, dcx.psp, code); break;
 	case WORD_GREATER_THAN_EQUAL: dcx.psp = fromC(dcx.rsp, dcx.psp, code); break;
+	case WORD_CASE: io_printsn("[ERROR] Cannot 'case' in intepreter mode."); break;
 }
 }
 
@@ -1166,6 +1224,7 @@ switch (word->type & 0x3F) {
 	dcx.condCode = COND_BGT; callWord((u32)code); break;
 	case WORD_GREATER_THAN_EQUAL: dcx.lastCompare = dcx.compileCursor;
 	dcx.condCode = COND_BLT; callWord((u32)code); break;
+	case WORD_CASE: d4th_case(code); break;
 }
 }
 

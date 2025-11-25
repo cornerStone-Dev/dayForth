@@ -196,6 +196,17 @@ c getTempFar .
 \} \ 1 T:7
 
 
+testCase{
+	case{
+		dup 0 == if{ " is 0" psn }
+		dup 1 == if{ " is 1" psn }
+		dup 2 == if{ " is 2" psn }
+		dup 3 == if{ " is 3" psn }
+		dup 4 == if{ " is 4" psn }
+		dup 5 == if{ " is 5" psn }
+		" not 0-5" psn
+	}
+}
 
 
 
