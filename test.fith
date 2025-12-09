@@ -271,9 +271,22 @@ timerSet{ ( micoseconds selectedTimer ) \ 2 + 2 = 4 T:7
 } \ 1 T:7
 
 
-
-
-
+light{ ( red green blue )
+green 8 << red + 8 << blue + 8 << PIO_0_BASE 0x10 + ! }
+24 instructions for word light
+blinkLed{ 1000000 0 timerSet 11 xorGpioOut }
+[INFO] Tail Call.
+15 instructions for word blinkLed
+c
+blinkLed@ 16 ISR_set
+0 LedColors;
+transformLed{ 1000 1 timerSet
+ LedColors dup dup $ 0x10 + swap ! \ update value
+ $ 8 << PIO_0_BASE 0x10 + ! } \ send to device
+31 instructions for word transformLed
+transformLed@ 17 ISR_set
+1000 1 timerSet
+0 1 timerSet
 
 
 

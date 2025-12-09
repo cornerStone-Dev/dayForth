@@ -208,10 +208,76 @@ testCase{
 	}
 }
 
+\ Turn on GPIO 11 for led on adafruit-itsybitsy
+\ Turn on GPIO 16 for neopixel on adafruit-itsybitsy
+0x40014004 IO_BANK0_BASE:
+
+\ func num
+setGpioFunc{ IO_BANK0_BASE swap 8 * + ! }
+
+5 11 setGpioFunc
+5 16 setGpioFunc
+5 17 setGpioFunc
+
+0xD0000000 SIO_BASE:
+
+\ gpioNum
+setGpioOE{ 1 swap << SIO_BASE 0x24 + ! }
+
+11 setGpioOE
+16 setGpioOE
+17 setGpioOE
+
+xorGpioOut{ 1 swap << SIO_BASE 0x1C + ! }
+
+11 xorGpioOut
+16 xorGpioOut
+
+\ set gpio 17 for pio
+6 17 setGpioFunc
+
+0x50200000 PIO_0_BASE:
+
+\ instr addr
+setPioInstruction{ PIO_0_BASE 0x48 + swap 4 * + ! }
+
+\ set pio clock divider
+18 16 << PIO_0_BASE 0xC8 + !
+\ set pio exec options
+4 12 << 1 7 << or PIO_0_BASE 0xCC + !
+\ set pio shift options
+24 25 << 1 17 << or PIO_0_BASE 0xD0 + !
+\ set pio pin control options
+1 29 << 1 26 << or 17 10 << or 17 5 << or PIO_0_BASE 0xDC + !
+
+\ program pio
+0xE081 0 setPioInstruction \ set pin dir
+0x6321 1 setPioInstruction
+0x1224 2 setPioInstruction
+0x1201 3 setPioInstruction
+0xA242 4 setPioInstruction
 
 
+\ turn on set pio control options
+1 8 << 1 4 << or 1 0 << or PIO_0_BASE !
 
+\ put in some data
+0x01010101 8 << PIO_0_BASE 0x10 + !
 
+light{ ( red green blue )
+green 8 << red + 8 << blue + 8 << PIO_0_BASE 0x10 + ! }
+
+blinkLed{ 1000000 0 timerSet 11 xorGpioOut }
+c
+blinkLed@ 16 ISR_set
+
+0 LedColors;
+
+transformLed{ 1000 1 timerSet
+	LedColors dup dup $ 0x10 + swap ! \ update value
+	$ 8 << PIO_0_BASE 0x10 + ! } \ send to device
+transformLed@ 17 ISR_set
+0 .
 
 
 

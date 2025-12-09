@@ -27,8 +27,9 @@
  * 5. Check the ending character of the word
  * 	a. '{' signifies we are defining a function word [DONE]
  * 	b. ':' signifies we are defining a constant [DONE]
- * 	c. ';' signifies we are defining a global variable. [DONE]
- * 	d. '.' signifies we are defining a local variable or assigning to it [DONE]
+ *	c. ';' signifies we are defining a global variable. [DONE]
+ *	d. '.' signifies we are defining a local variable or assigning to it [DONE]
+ *	d. '@' signifies we taking the address of a function word [DONE]
  * 6. Otherwise this word does not exist, print an error. [DONE]
  * 
  * Where [DONE] is found go to step 1.
@@ -118,7 +119,8 @@
  * */
 
 // TODO LIST
-//
+// Optional: optimize stores and/or loads
+// Optional: optimize increment and decrement of local variable
 //
 // DONE: make sure optimizations are correctly canceled in control flow ends
 // DONE: Case statement (takes care of basic if else if else pattern) 
@@ -945,11 +947,11 @@ d4th_endFunc(void)
 	io_printi(funcLen);
 	io_prints(" instructions for word ");
 	io_printsn((u8*)current->key);
-	u16 *cursor = dcx.compileBase;
-	while (cursor < dcx.compileCursor)
-	{
-		io_printhn(*cursor++);
-	}
+	//~ u16 *cursor = dcx.compileBase;
+	//~ while (cursor < dcx.compileCursor)
+	//~ {
+		//~ io_printhn(*cursor++);
+	//~ }
 	}
 	dcx.compileBase = dcx.compileCursor;
 }
@@ -983,6 +985,14 @@ d4th_if(u16 *code)/*i;*/
 			u32 val = (*dcx.lastSmallConst<<24)>>24;
 			*dcx.compileCursor++ = (*code++) + val;
 			*dcx.compileCursor++ = *code;
+			*dcx.compileCursor   = dcx.condCode;
+		} else if (dcx.compileCursor-2 == dcx.lastLocalLoad) {
+			// we just pushed a local, re-write
+			dcx.compileCursor -= 2;
+			u16 loadToWrk = dcx.compileCursor[1] + 1; // change destination to WRK from TOS
+			*dcx.compileCursor++ = loadToWrk;
+			*dcx.compileCursor++ = armCmp(0,1);
+			*dcx.compileCursor++ = *(code+1);
 			*dcx.compileCursor   = dcx.condCode;
 		} else {
 			code += 2;

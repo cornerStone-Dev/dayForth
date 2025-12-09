@@ -770,21 +770,21 @@ configUART:
 	ldr r1,=(1<<6)|(1<<4) ;@ |(1<<5)
 	str r1,[r4, #UART0_IRMASK]
 	
-	;@~ ldr r0,=IO_GPIO00_CTRL ;@ set gpio 0 to UART 0 TX
-	;@~ ldr r1,=2
-	;@~ str r1,[r0]
-	
-	;@~ ldr r0,=IO_GPIO01_CTRL ;@set gpio 1 to UART 0 RX
-	;@~ ldr r1,=2
-	;@~ str r1,[r0]
-	
-	ldr r0,=IO_GPIO12_CTRL ;@ set gpio 0 to UART 0 TX
+	ldr r0,=IO_GPIO00_CTRL ;@ set gpio 0 to UART 0 TX
 	ldr r1,=2
 	str r1,[r0]
 	
-	ldr r0,=IO_GPIO13_CTRL ;@set gpio 1 to UART 0 RX
+	ldr r0,=IO_GPIO01_CTRL ;@set gpio 1 to UART 0 RX
 	ldr r1,=2
-	str r1,[r0]	
+	str r1,[r0]
+	
+	;@~ ldr r0,=IO_GPIO12_CTRL ;@ set gpio 0 to UART 0 TX
+	;@~ ldr r1,=2
+	;@~ str r1,[r0]
+	
+	;@~ ldr r0,=IO_GPIO13_CTRL ;@set gpio 1 to UART 0 RX
+	;@~ ldr r1,=2
+	;@~ str r1,[r0]	
 	bx lr
 
 .thumb_func
@@ -956,25 +956,25 @@ nextKey:
 	movs	TOS, r4
 	pop	{r4,pc}
 
-define_builtIn_word "tree_add", 0
-	;@~  (Tree **treep, u8 *key, u32 keyLen, void *value)
-	pop	{SC2}
-	pop	{WRK,SC1}
-	bl	tree_add
-	NEXT
-define_builtIn_word "tree_count", 0
-	bl	tree_count
-	POP_TOS
-	NEXT
-define_builtIn_word "tree_free", 0
-	bl	tree_free
-	POP_TOS
-	NEXT
-define_builtIn_word "tree_find", 0
-	;@~  (Tree *tree, u8 *key, u32 keyLen)
-	pop	{WRK,SC1}
-	bl	tree_find
-	NEXT
+;@~ define_builtIn_word "tree_add", 0
+	 ;@~ (Tree **treep, u8 *key, u32 keyLen, void *value)
+	;@~ pop	{SC2}
+	;@~ pop	{WRK,SC1}
+	;@~ bl	tree_add
+	;@~ NEXT
+;@~ define_builtIn_word "tree_count", 0
+	;@~ bl	tree_count
+	;@~ POP_TOS
+	;@~ NEXT
+;@~ define_builtIn_word "tree_free", 0
+	;@~ bl	tree_free
+	;@~ POP_TOS
+	;@~ NEXT
+;@~ define_builtIn_word "tree_find", 0
+	 ;@~ (Tree *tree, u8 *key, u32 keyLen)
+	;@~ pop	{WRK,SC1}
+	;@~ bl	tree_find
+	;@~ NEXT
 
 .set enum , 0
 WORD_FUNC_BUILTIN = enum
@@ -1386,9 +1386,7 @@ Define_Word "timerSet", WORD_FUNC_BUILTIN
 	pop		{TOS, pc}
 Define_Word "true", WORD_CONSTANT_SMALL
 	.hword 1
-	.hword 0
 Define_Word "false", WORD_CONSTANT_SMALL
-	.hword 0
 	.hword 0
 Define_Word "memTest", WORD_FUNC_BUILTIN
 	push	{r0, lr}
@@ -1407,6 +1405,15 @@ Define_Word "memTest", WORD_FUNC_BUILTIN
 	bl	endSysTimer
 	bl	io_printin
 	pop	{r0, pc}
+Define_Word "alloc", WORD_FUNC_BUILTIN
+	push		{lr}
+	bl		zalloc
+	pop		{pc}
+Define_Word "free", WORD_FUNC_BUILTIN
+	pop		{WRK}
+	push		{WRK, lr}
+	bl		free
+	pop		{TOS, pc}
 
 .balign 4
 .ltorg
